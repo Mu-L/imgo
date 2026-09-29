@@ -269,11 +269,80 @@ jobs:
       - name: Build minifier JS wrapper
         run: pnpm --filter @imgo/minifier-js build
 
+      - name: Seed AppImage AppRun with portable permissions
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          # @tauri-apps/cli downloads its AppImage tools with mode 0770. The
+          # AppRun binary is copied into the AppDir and renamed to
+          # AppRun.wrapped by linuxdeploy, leaving it executable only for its
+          # owner/group. The AppImage catalog tests submissions under firejail,
+          # which mounts the image as a different user, so AppRun.wrapped fails
+          # with "Permission denied". Seed the bundler cache with mode 0755; the
+          # bundler only downloads a tool when the file is missing.
+          # See https://github.com/tauri-apps/tauri/issues/16155
+          arch="${TARGET%%-*}"
+          cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$cache_dir"
+          curl -fsSL -o "$cache_dir/AppRun-$arch" \
+            "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-$arch"
+          chmod 755 "$cache_dir/AppRun-$arch"
+          ls -l "$cache_dir/AppRun-$arch"
+
       - name: Build desktop bundle
         env:
           APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '' }}
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         run: pnpm --dir app tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+
+      - name: Validate AppImage permissions
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          # AppImages are mounted by uid, so every file must remain usable by
+          # any user, not just the one that built the image. Guard against
+          # regressions such as https://github.com/tauri-apps/tauri/issues/16155
+          shopt -s nullglob
+          images=(target/$TARGET/release/bundle/appimage/*.AppImage)
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "No AppImage found for $TARGET" >&2
+            exit 1
+          fi
+
+          for image in "${images[@]}"; do
+            image_abs="$(realpath "$image")"
+            echo "Checking permissions in $image"
+            check_dir="$(mktemp -d)"
+            (
+              cd "$check_dir"
+              "$image_abs" --appimage-extract >/dev/null
+            )
+            root="$check_dir/squashfs-root"
+
+            bad="$(find "$root" \( -type f -o -type d \) ! -perm -o+r -print -quit)"
+            if [[ -n "$bad" ]]; then
+              echo "ERROR: not world-readable: $bad" >&2
+              exit 1
+            fi
+
+            bad="$(find "$root" -type f -perm -u+x ! -perm -o+x -print -quit)"
+            if [[ -n "$bad" ]]; then
+              echo "ERROR: executable but not world-executable: $bad" >&2
+              exit 1
+            fi
+
+            bad="$(find "$root" -type d ! -perm -o+x -print -quit)"
+            if [[ -n "$bad" ]]; then
+              echo "ERROR: directory not world-traversable: $bad" >&2
+              exit 1
+            fi
+
+            rm -rf "$check_dir"
+          done
 
       - name: Build Windows portable bundle
         if: runner.os == 'Windows'
