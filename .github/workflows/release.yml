@@ -323,7 +323,10 @@ jobs:
             )
             root="$check_dir/squashfs-root"
 
-            bad="$(find "$root" \( -type f -o -type d \) ! -perm -o+r -print -quit)"
+            # `--appimage-extract` restores file modes but recreates directories
+            # using the current umask, so directory/root modes here are not the
+            # ones stored in the image. Only file modes are meaningful.
+            bad="$(find "$root" -type f ! -perm -o+r -print -quit)"
             if [[ -n "$bad" ]]; then
               echo "ERROR: not world-readable: $bad" >&2
               exit 1
@@ -332,12 +335,6 @@ jobs:
             bad="$(find "$root" -type f -perm -u+x ! -perm -o+x -print -quit)"
             if [[ -n "$bad" ]]; then
               echo "ERROR: executable but not world-executable: $bad" >&2
-              exit 1
-            fi
-
-            bad="$(find "$root" -type d ! -perm -o+x -print -quit)"
-            if [[ -n "$bad" ]]; then
-              echo "ERROR: directory not world-traversable: $bad" >&2
               exit 1
             fi
 
