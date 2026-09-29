@@ -263,7 +263,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}-${{ hashFiles('deps/*.patch') }}
+          # Include the runner image: "runner.os" is only "Linux" for both
+          # 22.04 and 24.04, so without it a 22.04 build restores the target/
+          # compiled on 24.04 and fails with E0463 ("can't find crate").
+          key: ${{ matrix.runner }}-${{ matrix.target }}-${{ hashFiles('deps/*.patch') }}
           workspaces: . -> target
 
       - uses: actions/download-artifact@v8
