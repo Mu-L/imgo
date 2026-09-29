@@ -124,9 +124,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux bundles are built on the oldest still-supported Ubuntu LTS
+          # (22.04, glibc 2.35) so that the AppImage, and the GTK stack
+          # linuxdeploy copies from the host, do not require a newer glibc.
+          # appimage.github.io runs its tests on ubuntu-22.04 and rejects
+          # binaries referencing GLIBC_2.38+/GLIBCXX_3.4.30+.
           - os: linux
             arch: x64
-            runner: ubuntu-24.04
+            runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             package_arch: amd64
             bundle: deb,rpm,appimage
@@ -138,7 +143,7 @@ jobs:
               target/x86_64-unknown-linux-gnu/release/bundle/flatpak/*.flatpak
           - os: linux
             arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             package_arch: arm64
             bundle: deb,rpm,appimage
